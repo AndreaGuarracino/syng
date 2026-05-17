@@ -12,7 +12,7 @@
  */
 
 static int DEBUG = 0 ; // set to the sync you want to debug, -1 for general, or 0 for none
-static int PATH_DEBUG = -1 ; // -1 disables; upstream shipped 0 which matches pathCount=0 → spam
+static int PATH_DEBUG = -1 ; // -1 disables; upstream shipped 0 which matches pathCount=0
 int pathCount = 0 ; // global for debugging
 
 #include "syng.h"
@@ -153,39 +153,6 @@ static Node nodeCreate (I32 in, U32 inOff, I32 out, U32 outOff)
   return node ;
 }
 
-/* Initial node creation for a single (in, out) path step. SIMPLE-side offset
-   and count are U16 (NodeSide union), so if either won't fit we must promote
-   that side to Rskip up front. Without this, nodeCreate silently truncates
-   the U16 fields and any subsequent convertToRskip() bakes the truncated
-   value into the directory -> GBWT replay drifts mid-walk. */
-static void nodeCreateOnePath (Node *n, U8 *s, I32 in, U32 inOff,
-                               I32 out, U32 outOff, bool countOnIn)
-{
-  bool simpleIn  = inOff  <= 0xffffu ;
-  bool simpleOut = outOff <= 0xffffu ;
-  *s = NODE_EXISTS ;
-  if (simpleIn)
-    { n->in.sync = in ; n->in.offset = inOff ;
-      n->in.count = (countOnIn || !simpleOut) ? 1 : 0 ;
-      *s |= NODE_SIMPLE_IN ;
-    }
-  else
-    { I64 iSym = 0, runLen = 1 ;
-      n->in.rs = rsBuildDynamicSyng (1, &in, &inOff, 1, &iSym, &runLen) ;
-      rsDirSetCount (n->in.rs, 0, 1) ;
-    }
-  if (simpleOut)
-    { n->out.sync = out ; n->out.offset = outOff ;
-      n->out.count = (!countOnIn || !simpleIn) ? 1 : 0 ;
-      *s |= NODE_SIMPLE_OUT ;
-    }
-  else
-    { I64 iSym = 0, runLen = 1 ;
-      n->out.rs = rsBuildDynamicSyng (1, &out, &outOff, 1, &iSym, &runLen) ;
-      rsDirSetCount (n->out.rs, 0, 1) ;
-    }
-}
-
 static inline void nodePrint (Node *n, U8 s)
 {
   if (s & NODE_SIMPLE_IN)
@@ -312,10 +279,15 @@ static U32 syngBWTadd (SyngBWT *sb, I32 k, I32 in, U32 inOff, U32 j, I32 out, U3
   if (!*s)               // empty - make a new simple node
     { assert (j == 0) ;
       if (isPositive)
-	nodeCreateOnePath (n, s, in, inOff, out, outOff, true) ;
+	{ *n = nodeCreate (in, inOff, out, outOff) ;
+	  n->in.count = 1 ;
+	}
       else
-	nodeCreateOnePath (n, s, -out, outOff, -in, inOff, false) ;
-      return 0 ;
+	{ *n = nodeCreate (-out, outOff, -in, inOff) ;
+	  n->out.count = 1 ;
+	}
+      *s = NODE_SIMPLE ;
+     return 0 ;
     }
 
   int retVal = 0 ;
