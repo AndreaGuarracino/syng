@@ -95,7 +95,15 @@ Hash hashCreate (int n)
   TrueHash *h = new0 (1, TrueHash) ;
 
   if (sizeof(I64) != sizeof(HashKey)) die ("type size mismatch in hashCreate") ;
-  REMOVED = hashInt((I64MAX-1)^I64MAX) ;
+  /* `hashInt((I64MAX-1)^I64MAX)` collapses to `hashInt(1) = I64MAX - 1`,
+   * which is the legitimate hash of integer key 1. With that sentinel,
+   * every `hashAdd(h, hashInt(1), ...)` treats the slot as REMOVED and
+   * assigns a fresh index each call, so `startCount` for GBWT start_nodes
+   * whose hashed key collides returns 0 instead of incrementing; replay
+   * via `syngBWTpathStartOld` then drifts onto another thread mid-walk.
+   * Use a fixed middle-of-range value that `hashInt()` cannot produce for
+   * any small-magnitude integer key. */
+  REMOVED.i = 0x4000000000000000LL ;
   
   if (n < 64) n = 64 ;
   --n ;
