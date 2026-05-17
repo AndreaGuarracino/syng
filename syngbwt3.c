@@ -12,7 +12,7 @@
  */
 
 static int DEBUG = 0 ; // set to the sync you want to debug, -1 for general, or 0 for none
-static int PATH_DEBUG = 0 ;
+static int PATH_DEBUG = -1 ; // -1 disables; upstream shipped 0 which matches pathCount=0 → spam
 int pathCount = 0 ; // global for debugging
 
 #include "syng.h"
