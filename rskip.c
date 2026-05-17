@@ -1497,7 +1497,7 @@ static int rank (Rskip rs, U32 k, int kSym)  // how many of symbol up to (not in
 	  if (sym == kSym) sSum += count ;
 	  if (sum > k) return (sym == kSym) ? sSum - (sum - k) : sSum ;
 	}
-      if (sum == k) return sSum ; // for k == length condition, which is legal
+      if (sum <= k) return sSum ; // k at or past end of array — rank is total sSum
     }
   else if (rs.dynamic->max) // dynamic - must work in the main list
     { if (!k) return 0 ; // by definition - protects against case noted below
