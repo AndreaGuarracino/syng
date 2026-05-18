@@ -492,7 +492,9 @@ int main (int argc, char *argv[])
 		  arrayMax(ti->seqInfo) = 0 ;
 		  int seqStart = 0 ;
 		  while (arrayMax(ti->seq) < 100<<20 && seqIOread (sio))
-		    { arrayp(ti->seqInfo, arrayMax(ti->seqInfo), SeqInfo)->len = sio->seqLen ;
+		    { SeqInfo *_si = arrayp(ti->seqInfo, arrayMax(ti->seqInfo), SeqInfo) ;
+		      _si->len = sio->seqLen ;
+		      if (sio->idLen > 0) _si->name = strndup (sqioId(sio), sio->idLen) ;
 		      array(ti->seq, seqStart+sio->seqLen, char) = 0 ;
 		      memcpy (arrp(ti->seq, seqStart, char), sqioSeq(sio), sio->seqLen) ;
 		      seqStart += sio->seqLen ;
