@@ -814,13 +814,14 @@ static Rskip rebuildAddLinear (Rskip rs, int k, U32 kSym)
   if (sum == k) // add to end
     { iSym[nRun] = kSym ; runLen[nRun++] = 1 ; ++nAdded ; }
 
-  // now we have built iSym, nRun we can extend the directory which might overwrite up to 4 nodes
+  // now we have built iSym, nRun we can extend the directory which might
+  // overwrite up to SYNG_DIR_UNITS Linear cells (3 today, was 4 pre-2026-05)
   int nSym = rs.linear->nSym ;
   if (kSym == nSym)
     { if (rsType(rs) == LINEAR)
 	{ ++rs.linear->nSym ; nAdded += 2 ; } // NB don't change local Sym here, so can use below
       else if (rsType(rs) == LINEAR_SYNG)
-	{ ++rs.linear->nSym ; nAdded += 4 ; }
+	{ ++rs.linear->nSym ; nAdded += SYNG_DIR_UNITS ; }
     }
 
   // now we refill if it still fits, or try to rebuild as linear if possible

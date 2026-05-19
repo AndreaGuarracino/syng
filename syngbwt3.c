@@ -21,16 +21,16 @@ int pathCount = 0 ; // global for debugging
 typedef union {
   struct {
     I32 sync ;
-    U16 offset ; // requires maximum offset (1>>16)-1
-    U16 count ;  // if count >= 1 >> 16 then use rs
+    U32 offset ; // bp gap to previous syncmer on this edge
+    U32 count ;  // edge-rank counter; rskip takes over above MAX (line ~265)
   } ;
-  Rskip rs ; // internally a 64-bit pointer of some sort
-} NodeSide ; // 64 bits
+  Rskip rs ; // 64-bit pointer; occupies the first 8 B of the union
+} NodeSide ; // 128 bits (struct is 4+4+4=12 B; union pads to Rskip alignment)
 
 typedef struct {
   NodeSide in ;
   NodeSide out ;
-} Node ;     // 128 bits
+} Node ;     // 256 bits
 
 #define NODE_EXISTS      0x01
 #define NODE_SIMPLE_IN   0x02
