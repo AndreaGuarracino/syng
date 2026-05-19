@@ -93,11 +93,24 @@ typedef union { Linear *linear ; Fixed *fixed ; Dynamic *dynamic ; } Rskip  ;
 enum { LINEAR=1, LINEAR_RAW, LINEAR_SYNG, DYNAMIC, FIXED_RAW, FIXED, FIXED_SYNG } ;
 static inline int rsType (Rskip rs) { return rs.linear[1].type ; }
 
+// Per-symbol directory entry for the syng flavour of a LINEAR rskip.
+// Widened from U16 to U32 in 2026-05 so that single-edge bp gaps larger
+// than 65 535 bp (which occur at acrocentric heterochromatin and
+// centromeric N-blocks) can be stored without silent truncation.
+//
+// Width must stay consistent with the storage-allocation arithmetic
+// below: each entry takes SYNG_DIR_UNITS Linear cells in the buffer,
+// and pointer increment (++lsd) advances by sizeof(LinearSyngDir).
+// `_Static_assert` enforces the match at compile time.
 typedef struct {
   I32 sym ;
-  U16 count ;
-  U16 offset ;
+  U32 offset ;
+  U32 count ;
 } LinearSyngDir ;
+#define SYNG_DIR_UNITS ((sizeof(LinearSyngDir) + sizeof(Linear) - 1) / sizeof(Linear))
+_Static_assert (sizeof(LinearSyngDir) == SYNG_DIR_UNITS * sizeof(Linear),
+                "LinearSyngDir must be a whole number of Linear cells -- "
+                "stride mismatch corrupts the directory") ;
 static inline LinearSyngDir *linearSyngDir (Rskip rs) { return (LinearSyngDir*) (rs.linear+2) ;  }
 // a list of nSym of these following the header contains the directory information for syng
 
@@ -182,7 +195,7 @@ Rskip rsCreate (int nSym, I32 *symbol)
 Rskip rsCreateSyng (int nSym, I32 *symbol, U32 *offset)
 { Rskip rs ;
   int nNode = 2 * nSym ; // initial allowance for 2 per symbol
-  int max = 16, y = 2 + 4*nSym + nNode ; while (max < y) max <<= 1 ;
+  int max = 16, y = 2 + SYNG_DIR_UNITS*nSym + nNode ; while (max < y) max <<= 1 ;
   if (max <= MAX_LINEAR)
     { rs = rsNew (LINEAR_SYNG, nSym, max) ;
       for (LinearSyngDir *lsd = linearSyngDir (rs) ; nSym-- ; ++lsd)
@@ -445,7 +458,7 @@ static int linearSize (int type, int nSym, int nRun, I64 *runLen)
     }
   if (sum > MAX_BIG) size = MAX_LINEAR+1 ;
   if (type == LINEAR) size += 2*nSym ; // for symbol directory
-  else if (type == LINEAR_SYNG) size += 4*nSym ; // for symbol, offset, count directory
+  else if (type == LINEAR_SYNG) size += SYNG_DIR_UNITS*nSym ; // for symbol, offset, count directory
   return size ;
 }
 
@@ -457,7 +470,7 @@ static bool fillLinearNodes (Rskip rs, int nRun, I64 *iSym, I64 *runLen)
   Linear *min = rs.linear + 2 ;
   U64 total = 0 ;
 
-  if (rsType(rs) == LINEAR_SYNG) min += 4*rs.linear->nSym ;
+  if (rsType(rs) == LINEAR_SYNG) min += SYNG_DIR_UNITS*rs.linear->nSym ;
   else if (rsType(rs) == LINEAR) min += 2*rs.linear->nSym ;
 
   for (int i = 0 ; i < nRun ; ++i, --node)
@@ -578,6 +591,27 @@ static Rskip buildDynamic (U8 type, int nSym, int nRun, I64 *iSym, I64 *runLen) 
   // preliminaries are the same as buildFixed() except we scale max to next power of 2
   int i, s ;         // generic node counter and symbol index
   int nNode = nSym ; // number of nodes needed - allow for directory
+
+  // Empty-body fast path: caller asked for a directory with nSym entries but
+  // no runs (this happens when syng converts a SIMPLE side that has only the
+  // directory populated, e.g. a freshly converted edge with no traversals
+  // yet recorded). The main body below assumes nRun >= 1 -- it allocates
+  // variable-length stack arrays sized by nRun and indexes through symMax,
+  // both of which misbehave when nRun == 0. Hand back a header-only
+  // structure with the directory slot and let later rsAddSyng / rsDirAddSyng
+  // calls grow it normally.
+  if (nRun == 0)
+    { int empty_size = 128 ; while (empty_size <= nNode) empty_size <<= 1 ;
+      Rskip rs = rsNew (DYNAMIC, nSym, 1 + empty_size) ;
+      // rsNew already set max/nSym/free + zero'd the rest via new0;
+      // explicitly null the start/maxDepth/start fields for clarity since
+      // they live in overlapping unions and a downstream reader could
+      // otherwise see stale values from the union sister-fields.
+      rs.dynamic->start = 0 ;
+      rs.dynamic->maxDepth = 0 ;
+      return rs ;
+    }
+
   int *iDepth = new (nRun, int) ; // number of nodes/layers for run i
   int maxDepth = 0 ; // maximum of iDepth[]
   int symMax = -1 ;  // symbol value for max depth
@@ -708,7 +742,7 @@ static inline int linearSpace (Rskip rs) // returns number of Linear structs ava
     {
     case LINEAR_RAW:  return rs.linear[1].free - 1 ;
     case LINEAR:      return rs.linear[1].free - (1 + 2*rs.linear->nSym) ;
-    case LINEAR_SYNG: return rs.linear[1].free - (1 + 4*rs.linear->nSym) ;
+    case LINEAR_SYNG: return rs.linear[1].free - (1 + SYNG_DIR_UNITS*rs.linear->nSym) ;
     }
   return 0 ;
 }
@@ -800,7 +834,7 @@ static Rskip rebuildAddLinear (Rskip rs, int k, U32 kSym)
       if (rsType(rs) == LINEAR)
 	memcpy (rsOut.linear+2, rs.linear+2, 2*nSym*sizeof(Linear)) ;
       else if (rsType(rs) == LINEAR_SYNG)
-	memcpy (rsOut.linear+2, rs.linear+2, 4*nSym*sizeof(Linear)) ;
+	memcpy (rsOut.linear+2, rs.linear+2, SYNG_DIR_UNITS*nSym*sizeof(Linear)) ;
       if (fillLinearNodes (rsOut, nRun, iSym, runLen))
 	{ rsDestroy (rs) ;
 	  rs = rsOut ;
@@ -848,7 +882,7 @@ static bool doubleLinear (Rskip *rsp) // extends space
 
   // copy header and directory entries
   int nHeader = 2 ;
-  if (rsType(rs) == LINEAR_SYNG) nHeader += 4*nSym ;
+  if (rsType(rs) == LINEAR_SYNG) nHeader += SYNG_DIR_UNITS*nSym ;
   else if (rsType(rs) == LINEAR) nHeader += 2*nSym ;
   memcpy (nNew, nOld, nHeader*sizeof(Linear)) ; 
   rs2.linear->max = newMax ; // need to change this

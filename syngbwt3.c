@@ -873,6 +873,79 @@ int main (int argc, char *argv[])
 
 /************** end of file **************/
 
+/*** rank-keyed forward-step primitives over the syng BWT (see syng.h).  ***/
+/*** Defined here because Node + NODE_SIMPLE_* are file-private.         ***/
+
+bool syngBWTpathRankIncoming (SyngBWT *sb, I32 node, I32 prev_node,
+                              U32 prev_off, U32 local_rank, U32 *abs_rank)
+{
+  if (!sb || !abs_rank) return false ;
+  bool node_is_positive = (node >= 0) ;
+  I32  abs_idx = node_is_positive ? node : -node ;
+  if (abs_idx == 0 || abs_idx >= arrayMax (sb->node)) return false ;
+  U8 status = arr (sb->status, abs_idx, U8) ;
+  if (!status) return false ;
+
+  // syng's NodeSide.in stores incoming edges for the positive traversal
+  // and NodeSide.out for the negative traversal; pick the side that
+  // matches `node`'s sign. If that side is still SIMPLE the incoming
+  // edge is unique and its rank is just `local_rank`; otherwise add the
+  // rskip directory rank for (prev_node, prev_off).
+  U32 rank = local_rank ;
+  Node *n = arrp (sb->node, abs_idx, Node) ;
+  if (node_is_positive)
+    { if (!(status & NODE_SIMPLE_IN))
+        rank += rsDirRankSyng (n->in.rs, prev_node, prev_off) ;
+    }
+  else
+    { if (!(status & NODE_SIMPLE_OUT))
+        rank += rsDirRankSyng (n->out.rs, -prev_node, prev_off) ;
+    }
+  *abs_rank = rank ;
+  return true ;
+}
+
+bool syngBWTpathRankStep (SyngBWT *sb, I32 node, U32 abs_rank,
+                          I32 *next_node, U32 *next_off, U32 *next_abs_rank)
+{
+  if (!sb || !next_node || !next_off || !next_abs_rank) return false ;
+  bool node_is_positive = (node >= 0) ;
+  I32  abs_idx = node_is_positive ? node : -node ;
+  if (abs_idx == 0 || abs_idx >= arrayMax (sb->node)) return false ;
+  U8 status = arr (sb->status, abs_idx, U8) ;
+  if (!status) return false ;
+
+  // Read the chosen outgoing edge: from `out` for forward traversal of
+  // a positive node, from `in` for reverse traversal of a negative one.
+  // SIMPLE side is the unique-edge fast path; the rskip side uses
+  // rsFindSyng to look up an edge by absolute rank.
+  I32 out_node = 0 ;
+  U32 out_off  = 0 ;
+  U32 local_edge_rank = abs_rank ;
+  Node *n = arrp (sb->node, abs_idx, Node) ;
+  if (node_is_positive)
+    { if (status & NODE_SIMPLE_OUT)
+        { out_node = n->out.sync ; out_off = n->out.offset ; }
+      else
+        local_edge_rank = rsFindSyng (n->out.rs, abs_rank, &out_node, &out_off) ;
+    }
+  else
+    { if (status & NODE_SIMPLE_IN)
+        { out_node = -n->in.sync ; out_off = n->in.offset ; }
+      else
+        { local_edge_rank = rsFindSyng (n->in.rs, abs_rank, &out_node, &out_off) ;
+          out_node = -out_node ;
+        }
+    }
+
+  if (!out_node) return false ;
+  *next_node = out_node ;
+  *next_off  = out_off ;
+  // Resolve the destination's absolute rank.
+  return syngBWTpathRankIncoming (sb, out_node, node, out_off,
+                                   local_edge_rank, next_abs_rank) ;
+}
+
 #ifdef CONVERT_SERIAL
 
 void updateNodePass2 (Node *node, U8 *status, I32 x, I64 off, bool isIn)

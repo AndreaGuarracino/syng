@@ -59,6 +59,12 @@ void           syngBWTpathDestroy (SyngBWTpath *sbp) ;
 void           syngBWTstat (SyngBWT *sb) ;
 bool           syngBWTlocFind (SyngBWT *sb, I64 loc, I64 *file, I64 *path, I64 *offset) ;
 
+// in syngbwt_step.c (rank-keyed forward-step primitives over the syng BWT)
+bool syngBWTpathRankStep     (SyngBWT *sb, I32 node, U32 abs_rank,
+                              I32 *next_node, U32 *next_off, U32 *next_abs_rank) ;
+bool syngBWTpathRankIncoming (SyngBWT *sb, I32 node, I32 prev_node,
+                              U32 prev_off, U32 local_rank, U32 *abs_rank) ;
+
 static char *syngSchemaText =
   "1 3 def 1 0               schema for syng\n"
   ".\n"

@@ -160,9 +160,9 @@ int main (int argc, char *argv[])
   timeUpdate (stdout) ;
 
   syngBWTwrite (ofOut, gbwt) ;
+  printf ("wrote gbwt to file %s\n", argv[2]) ; // print before close: oneFileName reads ofOut after free otherwise
   oneFileClose (ofOut) ;
   syngBWTdestroy (gbwt) ;
-  printf ("wrote gbwt to file %s\n", oneFileName(ofOut)) ;
   timeUpdate (stdout) ;
 
   printf ("total: ") ; timeTotal (stdout) ;
